@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# 项目特定
+logs/
+models/*.h5
+models/*.pth
+models/*.onnx
+*.log
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 本地配置文件
+config/local_config.py
+*.local.py
+
+# 测试文件
+test_*.py
+!test_env.py  # 保留环境测试文件
+
+# 临时文件
+tmp/
+temp/
+*.tmp
