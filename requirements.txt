@@ -1,0 +1,27 @@
+# AI Emotion Robot Project Requirements - Raspberry Pi Camera Version
+# Python 3.9.19 compatible packages
+
+# HTTP requests (for future cloud features)
+requests==2.31.0
+
+# Computer vision - now enabled for real camera detection
+opencv-python-headless==4.13.0.92
+
+# OLED Display Driver - for real hardware OLED screens
+luma.oled==3.13.0
+luma.core==2.4.2
+
+# Speech recognition - skipped for lightweight version
+# SpeechRecognition==3.10.0
+
+# Face recognition and emotion detection - replaced with OpenCV Haar Cascade
+# deepface==0.0.79
+
+# Progress bars - optional
+tqdm==4.67.3
+
+# Core dependencies (automatically installed with above)
+# numpy, pillow, tensorflow, torch, matplotlib, pandas
+
+# Note: This version uses OpenCV for real-time face detection
+# on Raspberry Pi with camera module support.

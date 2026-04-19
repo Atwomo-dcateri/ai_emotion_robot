@@ -7,12 +7,14 @@
 ```
 ai_emotion_robot/
 ├── main_light.py          # 摄像头版主入口
+├── main_oled_real.py      # 真实OLED显示版主入口
 ├── vision/                # 视觉模块（OpenCV人脸+表情分析）
-├── hardware/              # 硬件模拟（ASCII显示）
-├── decision/              # 决策引擎（预留）
+├── hardware/              # 硬件模块（OLED驱动+模拟器）
+├── decision/              # 决策引擎
 ├── audio/                 # 语音模块（预留）
 ├── fusion/                # 多模态融合（预留）
 ├── test_*.py              # 测试脚本
+├── setup_oled.sh          # OLED硬件设置脚本
 └── utils/                 # 工具函数
 ```
 
@@ -22,6 +24,10 @@ ai_emotion_robot/
 - ✅ **表情分析**：基于面部特征（眼睛、嘴巴）分析表情
 - ✅ **实时检测**：后台线程持续检测，0.5秒间隔
 - ✅ **ASCII 显示**：控制台显示表情艺术
+- ✅ **真实OLED显示**：支持SSD1306硬件显示屏
+- ✅ **像素表情**：16x16像素艺术表情显示
+- ✅ **动画效果**：表情切换和闪烁动画
+- ✅ **状态显示**：系统状态信息面板
 - ✅ **模块化设计**：保留原有架构，便于后续扩展
 - ✅ **树莓派友好**：优化后的轻量实现
 
@@ -87,6 +93,65 @@ python3 main_light.py
 ------------------------------
 16:18:42        检测到人脸      平静 (85.3%)
 ```
+
+## OLED显示屏集成
+
+### 硬件要求
+- SSD1306 OLED显示屏 (128x64像素)
+- I2C接口连接
+- Raspberry Pi GPIO引脚
+
+### 硬件连接
+```
+OLED VCC → Raspberry Pi 3.3V (Pin 1)
+OLED GND → Raspberry Pi GND (Pin 6)
+OLED SCL → Raspberry Pi SCL (Pin 5, GPIO 3)
+OLED SDA → Raspberry Pi SDA (Pin 3, GPIO 2)
+```
+
+### OLED设置
+1. **运行设置脚本**：
+```bash
+chmod +x setup_oled.sh
+./setup_oled.sh
+```
+
+2. **手动配置**（如果脚本失败）：
+```bash
+# 启用I2C
+sudo raspi-config nonint do_i2c 0
+
+# 安装依赖
+sudo apt-get install -y python3-dev i2c-tools
+python3 -m pip install luma.oled luma.core pillow
+
+# 检查I2C设备
+i2cdetect -y 1
+```
+
+### OLED运行
+```bash
+# 真实OLED模式
+python3 main_oled_real.py
+
+# 模拟器模式（测试用）
+python3 main_oled_real.py --simulator
+
+# 指定I2C地址（如果不是0x3C）
+python3 main_oled_real.py --i2c-address=0x3D
+```
+
+### OLED测试
+```bash
+# 测试OLED驱动
+python3 test_oled_driver.py
+```
+
+### OLED表情显示
+- **像素艺术**：16x16像素的表情图标
+- **动画效果**：表情切换时的闪烁动画
+- **状态面板**：显示系统状态和检测信息
+- **实时更新**：跟随摄像头检测结果更新显示
 
 ## 后续扩展
 

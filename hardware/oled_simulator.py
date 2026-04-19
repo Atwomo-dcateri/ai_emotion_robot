@@ -19,6 +19,7 @@ class OLEDSimulator:
             '悲伤': '😢',
             '惊讶': '😲',
             '平静': '😐',
+            '痛苦': '😣',
             '默认': '🤖'
         }
         
@@ -48,6 +49,15 @@ class OLEDSimulator:
                 " ╭╯╰╮  ",
                 "╭╯  ╰╮ ",
                 "╰╮__╭╯ ",
+                " ╰╮╭╯  ",
+                "  ╰╯   "
+            ],
+            '痛苦': [
+                "   😣   ",
+                "  ╭╮   ",
+                " ╭╯╰╮  ",
+                "╭╯  ╰╮ ",
+                "╰╮--╭╯ ",
                 " ╰╮╭╯  ",
                 "  ╰╯   "
             ],
@@ -132,6 +142,7 @@ class OLEDSimulator:
             emotion_descriptions = {
                 '开心': '😄 检测到笑容！',
                 '悲伤': '😢 看起来有些难过',
+                '痛苦': '😣 看起来很痛苦',
                 '愤怒': '😠 似乎不太高兴',
                 '恐惧': '😨 感到害怕或紧张',
                 '惊讶': '😲 哇！很惊讶！',
@@ -156,6 +167,14 @@ class OLEDSimulator:
             print("=" * 25)
         
         return True
+    
+    def show_emotion(self, emotion, confidence=75.0):
+        """
+        显示表情 (兼容RealOLEDHardware接口)
+        :param emotion: 表情类型
+        :param confidence: 置信度
+        """
+        return self.show_face(emotion, confidence)
     
     def _create_confidence_bar(self, confidence):
         """
