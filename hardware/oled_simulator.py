@@ -270,7 +270,8 @@ class OLEDSimulator:
         
         for i in range(min(frames, len(blink_frames))):
             print(f"\n{'█' * 40}")
-            print("[OLED动画] 👀 眨眼动画"            print(f"{'█' * 40}")
+            print("[OLED动画] 👀 眨眼动画")
+            print(f"{'█' * 40}")
             
             for line in blink_frames[i]:
                 print(f"          {line}")
@@ -329,7 +330,8 @@ class OLEDSimulator:
         
         for i in range(min(frames, len(happy_frames))):
             print(f"\n{'█' * 40}")
-            print("[OLED动画] 😄 开心动画"            print(f"{'█' * 40}")
+            print("[OLED动画] 😄 开心动画")
+            print(f"{'█' * 40}")
             
             for line in happy_frames[i]:
                 print(f"          {line}")
@@ -388,7 +390,8 @@ class OLEDSimulator:
         
         for i in range(min(frames, len(surprise_frames))):
             print(f"\n{'█' * 40}")
-            print("[OLED动画] 😲 惊讶动画"            print(f"{'█' * 40}")
+            print("[OLED动画] 😲 惊讶动画")
+            print(f"{'█' * 40}")
             
             for line in surprise_frames[i]:
                 print(f"          {line}")
@@ -498,6 +501,8 @@ class HardwareSimulator:
                 self.execute_action(action['oled'])
             if 'servo' in action:
                 self.execute_action(action['servo'])
+        
+        return True
     
     def show_emotion_transition(self, from_emotion, to_emotion, steps=3, confidence=75.0):
         """
@@ -527,6 +532,7 @@ class HardwareSimulator:
         # 最终显示目标表情
         self.oled.show_face(to_emotion, confidence)
         print(f"[OLED过渡] ✅ 过渡完成")
+        return True
     
     def show_emotion_intensity(self, emotion, base_confidence=60.0, max_confidence=95.0, steps=5):
         """
@@ -607,5 +613,4 @@ class HardwareSimulator:
             time.sleep(duration)
         
         print(f"[OLED序列] ✅ 序列播放完成")
-            if 'speak' in action:
-                self.execute_action(action['speak'])
+        return True
