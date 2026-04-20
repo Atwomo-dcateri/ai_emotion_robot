@@ -16,17 +16,18 @@ class Config:
 
     # ========== 语音配置 ==========
     # STT 配置
-    AUDIO_STT_ENGINE = "vosk"  # vosk / google / none
+    AUDIO_STT_ENGINE = "vosk"  # vosk / none（none 时跳过语音输入）
     AUDIO_VOSK_MODEL_PATH = "models/vosk-model-small-cn-0.22"
     AUDIO_WAKE_WORDS = ["你好", "小机器人"]
     AUDIO_LISTEN_TIMEOUT = 5.0
     AUDIO_SAMPLE_RATE = 16000
+    AUDIO_DEVICE_INDEX = 2  # USB 麦克风设备索引，None 为默认设备
 
     # TTS 配置
-    AUDIO_TTS_ENGINE = "pyttsx3"  # pyttsx3 / gtts / none
+    AUDIO_TTS_ENGINE = "espeak"  # espeak / none
     AUDIO_TTS_RATE = 180
     AUDIO_TTS_VOLUME = 1.0
-
+    AUDIO_TTS_VOICE = 'zh'
     # ========== API 配置 ==========
     DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
     LLM_SIMULATION_MODE = not bool(DEEPSEEK_API_KEY)
@@ -41,4 +42,3 @@ class Config:
         cls.DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
         cls.LLM_SIMULATION_MODE = not bool(cls.DEEPSEEK_API_KEY)
         return cls
-    

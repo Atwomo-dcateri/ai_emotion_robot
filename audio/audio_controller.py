@@ -10,7 +10,6 @@ import time
 from enum import Enum
 from typing import Optional, Callable, List
 
-from audio.base import SpeechRecognitionInterface, SpeechSynthesisInterface
 from audio.speech_recognition import create_speech_recognition
 from audio.speech_synthesis import create_speech_synthesis
 
@@ -38,36 +37,21 @@ class AudioController:
         - ask_question()       主动提问并等待回答
         - enable_wake_word()   启用/禁用唤醒词
         - on_wake_word()       注册唤醒词回调
+        - on_state_change()    注册状态变化回调
     """
 
     def __init__(self, config):
         """
         Args:
-            config: Config 类实例，需包含以下属性：
-                - AUDIO_STT_ENGINE
-                - AUDIO_VOSK_MODEL_PATH
-                - AUDIO_SAMPLE_RATE
-                - AUDIO_WAKE_WORDS
-                - AUDIO_LISTEN_TIMEOUT
-                - AUDIO_TTS_ENGINE
-                - AUDIO_TTS_RATE
-                - AUDIO_TTS_VOLUME
+            config: Config 类实例
         """
         self.config = config
 
         # 初始化 STT
-        self._stt = create_speech_recognition(
-            engine=config.AUDIO_STT_ENGINE,
-            model_path=getattr(config, 'AUDIO_VOSK_MODEL_PATH', None),
-            sample_rate=getattr(config, 'AUDIO_SAMPLE_RATE', 16000)
-        )
+        self._stt = create_speech_recognition(config)
 
         # 初始化 TTS
-        self._tts = create_speech_synthesis(
-            engine=config.AUDIO_TTS_ENGINE,
-            rate=getattr(config, 'AUDIO_TTS_RATE', 180),
-            volume=getattr(config, 'AUDIO_TTS_VOLUME', 1.0)
-        )
+        self._tts = create_speech_synthesis(config)
 
         # 唤醒词设置
         self._wake_words = getattr(config, 'AUDIO_WAKE_WORDS', ["你好", "小机器人"])
@@ -84,6 +68,7 @@ class AudioController:
 
         # 回调
         self._wake_word_callback = None
+        self._state_change_callback = None
 
         # 内部线程
         self._running = False
@@ -107,7 +92,8 @@ class AudioController:
         self._worker_thread = threading.Thread(target=self._state_worker, daemon=True)
         self._worker_thread.start()
 
-        logger.info("语音控制器启动成功，状态: IDLE")
+        self._set_state(AudioState.IDLE)
+        logger.info("语音控制器启动成功")
         return True
 
     def stop(self) -> None:
@@ -119,10 +105,28 @@ class AudioController:
         self._stt.stop()
         self._tts.stop()
 
-        with self._state_lock:
-            self._state = AudioState.IDLE
-
+        self._set_state(AudioState.IDLE)
         logger.info("语音控制器已停止")
+
+    def _set_state(self, new_state: AudioState):
+        """设置状态并触发回调"""
+        with self._state_lock:
+            old_state = self._state
+            if old_state == new_state:
+                return
+            self._state = new_state
+            logger.debug(f"状态转换: {old_state.value} -> {new_state.value}")
+
+        # 触发回调
+        if self._state_change_callback:
+            try:
+                self._state_change_callback(new_state.value, old_state.value)
+            except Exception as e:
+                logger.error(f"状态回调异常: {e}")
+
+    def _get_state(self) -> AudioState:
+        with self._state_lock:
+            return self._state
 
     def _state_worker(self):
         """状态机工作线程"""
@@ -138,17 +142,7 @@ class AudioController:
             elif current_state == AudioState.SPEAKING:
                 self._handle_speaking()
 
-            time.sleep(0.05)  # 避免忙等
-
-    def _get_state(self) -> AudioState:
-        with self._state_lock:
-            return self._state
-
-    def _set_state(self, new_state: AudioState):
-        with self._state_lock:
-            old_state = self._state
-            self._state = new_state
-            logger.debug(f"状态转换: {old_state.value} -> {new_state.value}")
+            time.sleep(0.05)
 
     def _handle_idle(self):
         """IDLE 状态：监听唤醒词"""
@@ -164,9 +158,6 @@ class AudioController:
                     if self._wake_word_callback:
                         self._wake_word_callback()
                     self._set_state(AudioState.LISTENING)
-                    # 清空识别队列，避免残留
-                    while self._stt.get_text():
-                        pass
                     break
 
     def _handle_listening(self):
@@ -197,20 +188,19 @@ class AudioController:
             self._set_state(AudioState.PROCESSING)
         else:
             logger.info("监听超时，无输入")
-            # 回到 IDLE，重新启用唤醒词
             self._wake_word_enabled = True
             self._set_state(AudioState.IDLE)
 
     def _handle_processing(self):
-        """PROCESSING 状态：等待外部调用 respond() 或 ask_question 结果"""
-        # 此状态不主动做任何事，等待外部触发状态转换
-        # 如果进入 PROCESSING 后长时间未被处理，自动超时回到 IDLE
-        time.sleep(0.1)  # 避免忙等
+        """PROCESSING 状态：等待外部调用 respond()"""
+        # 此状态不主动做任何事，等待外部触发
+        # 防止空转，短暂休眠
+        time.sleep(0.05)
 
     def _handle_speaking(self):
         """SPEAKING 状态：等待 TTS 播放完成"""
         if not self._tts.is_speaking():
-            logger.info("语音播放完成")
+            logger.debug("语音播放完成")
             self._wake_word_enabled = True
             self._set_state(AudioState.IDLE)
 
@@ -221,7 +211,7 @@ class AudioController:
         非阻塞获取用户语音输入
 
         Args:
-            timeout: 等待超时（秒），设为 0 立即返回
+            timeout: 等待超时（秒）
 
         Returns:
             用户输入文本，若无新输入返回 None
@@ -240,8 +230,6 @@ class AudioController:
         """
         语音回复用户
 
-        注意：此方法会触发状态转换 PROCESSING -> SPEAKING
-
         Args:
             text: 回复内容
 
@@ -250,7 +238,6 @@ class AudioController:
         """
         if not text:
             logger.warning("回复内容为空")
-            # 无回复，回到 IDLE
             self._wake_word_enabled = True
             self._set_state(AudioState.IDLE)
             return False
@@ -271,8 +258,6 @@ class AudioController:
         """
         主动提问并等待回答
 
-        状态转换：当前状态 -> LISTENING -> 等待回答 -> 返回结果
-
         Args:
             text: 提问内容
             timeout: 等待回答超时（秒）
@@ -280,9 +265,17 @@ class AudioController:
         Returns:
             用户回答文本，超时返回 None
         """
-        # 先播放问题
-        self._tts.speak(text)
+        # 先异步播放问题
+        task_id = self._tts.speak_async(text)
+        if not task_id:
+            logger.error("提问语音播放失败")
+            return None
+
         logger.info(f"主动提问: {text}")
+
+        # 等待语音播放完成（简单等待，可优化）
+        while self._tts.is_speaking():
+            time.sleep(0.1)
 
         # 进入监听状态
         self._wake_word_enabled = False
@@ -320,9 +313,19 @@ class AudioController:
         self._wake_word_callback = callback
         logger.info("唤醒词回调已注册")
 
+    def on_state_change(self, callback: Callable[[str, str], None]) -> None:
+        """
+        注册状态变化回调
+
+        Args:
+            callback: 回调函数，参数为 (new_state, old_state)
+        """
+        self._state_change_callback = callback
+        logger.info("状态变化回调已注册")
+
     def get_state(self) -> str:
-        """获取当前状态（调试用）"""
-        return self._state.value
+        """获取当前状态"""
+        return self._get_state().value
 
     def is_speaking(self) -> bool:
         """是否正在播放语音"""

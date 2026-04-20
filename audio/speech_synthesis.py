@@ -1,11 +1,12 @@
 """
 模块名称：speech_synthesis.py
-功能描述：语音合成实现（pyttsx3 + 模拟降级）
-依赖：pyttsx3 / gtts
+功能描述：espeak 离线语音合成
+依赖：espeak 系统命令
 """
 
 import logging
 import threading
+import subprocess
 from typing import Optional
 
 from audio.base import SpeechSynthesisInterface
@@ -13,46 +14,111 @@ from audio.base import SpeechSynthesisInterface
 logger = logging.getLogger(__name__)
 
 
-class Pyttsx3Synthesis(SpeechSynthesisInterface):
-    """pyttsx3 离线语音合成"""
+class EspeakSynthesis(SpeechSynthesisInterface):
+    """espeak 离线语音合成"""
 
-    def __init__(self, rate: int = 180, volume: float = 1.0):
+    def __init__(self, rate: int = 150, volume: int = 100, voice: str = 'zh'):
+        """
+        Args:
+            rate: 语速（单词/分钟），默认 150，中文建议 130-160
+            volume: 音量 0-200，默认 100
+            voice: 语音，'zh' 为中文，'en' 为英文，'zh+f1' 为女声
+        """
         self.rate = rate
         self.volume = volume
-        self._engine = None
+        self.voice = voice
         self._speaking = False
         self._lock = threading.Lock()
+        self._available = None
+        
 
-    def _init_engine(self):
+    def _check_espeak(self) -> bool:
+        """检查 espeak 是否可用（缓存结果）"""
+        if self._available is not None:
+            return self._available
+
         try:
-            import pyttsx3
-            self._engine = pyttsx3.init()
-            self._engine.setProperty('rate', self.rate)
-            self._engine.setProperty('volume', self.volume)
-            logger.info("pyttsx3 初始化成功")
-            return True
+            result = subprocess.run(
+                ['espeak', '--version'],
+                capture_output=True,
+                text=True,
+                timeout=2
+            )
+            if result.returncode == 0:
+                self._available = True
+                logger.info("espeak 可用")
+                return True
+        except FileNotFoundError:
+            logger.error("espeak 未安装，请运行: sudo apt-get install espeak -y")
         except Exception as e:
-            logger.error(f"pyttsx3 初始化失败: {e}")
-            return False
+            logger.error(f"检查 espeak 失败: {e}")
+
+        self._available = False
+        return False
 
     def speak(self, text: str) -> bool:
+        """
+        同步播放语音
+
+        Args:
+            text: 要播放的文本
+
+        Returns:
+            是否成功
+        """
+        if not text:
+            return False
+
+        if not self._check_espeak():
+            logger.error("espeak 不可用，无法播放")
+            return False
+
         with self._lock:
-            if self._engine is None and not self._init_engine():
-                return False
+            self._speaking = True
+
+            # 构建命令
+            # -v zh : 中文语音
+            # -s 150 : 语速
+            # -a 100 : 音量
+            cmd = [
+                'espeak',
+                '-v', self.voice,
+                '-s', str(self.rate),
+                '-a', str(self.volume),
+                text
+            ]
+
+            logger.info(f"TTS 播放: {text[:50]}...")
+
             try:
-                self._speaking = True
-                self._engine.say(text)
-                self._engine.runAndWait()
+                # 使用 subprocess.run 等待完成
+                subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
                 self._speaking = False
-                logger.info(f"TTS 播放: {text[:50]}...")
                 return True
+
+            except subprocess.TimeoutExpired:
+                logger.error("TTS 播放超时")
             except Exception as e:
                 logger.error(f"TTS 播放失败: {e}")
-                self._speaking = False
-                return False
+
+            self._speaking = False
+            return False
 
     def speak_async(self, text: str) -> Optional[str]:
-        """异步播放（pyttsx3 不支持原生异步，使用线程模拟）"""
+        """
+        异步播放语音
+
+        Args:
+            text: 要播放的文本
+
+        Returns:
+            任务 ID
+        """
         import uuid
         task_id = str(uuid.uuid4())[:8]
 
@@ -61,145 +127,74 @@ class Pyttsx3Synthesis(SpeechSynthesisInterface):
 
         thread = threading.Thread(target=_play, daemon=True)
         thread.start()
+
         logger.debug(f"异步 TTS 任务启动: {task_id}")
         return task_id
 
     def is_speaking(self) -> bool:
-        return self._speaking
+        """返回是否正在播放"""
+        with self._lock:
+            return self._speaking
 
     def stop(self) -> None:
-        if self._engine:
-            try:
-                self._engine.stop()
-            except:
-                pass
-        self._speaking = False
-        logger.info("TTS 播放已停止")
+        """停止当前播放"""
+        with self._lock:
+            self._speaking = False
+            logger.info("TTS 播放已停止")
 
     def set_voice(self, voice_id: str) -> None:
-        if self._engine:
-            try:
-                voices = self._engine.getProperty('voices')
-                for voice in voices:
-                    if voice_id in voice.id or voice_id in voice.name:
-                        self._engine.setProperty('voice', voice.id)
-                        logger.info(f"切换音色: {voice.name}")
-                        return
-                logger.warning(f"未找到音色: {voice_id}")
-            except Exception as e:
-                logger.error(f"切换音色失败: {e}")
+        """
+        切换音色
 
+        可用语音:
+        - zh : 中文（男声）
+        - zh+f1 : 中文（女声）
+        - zh+f2 : 中文（女声，更高音）
+        - en : 英文
+        - en-us : 美式英语
+        - en-uk : 英式英语
+        """
+        self.voice = voice_id
+        logger.info(f"切换语音: {voice_id}")
 
-class GttsSynthesis(SpeechSynthesisInterface):
-    """gTTS 在线语音合成（需网络）"""
-
-    def __init__(self, lang: str = 'zh'):
-        self.lang = lang
-        self._speaking = False
-        self._current_process = None
-
-    def speak(self, text: str) -> bool:
+    def list_voices(self) -> list:
+        """列出所有可用语音"""
         try:
-            from gtts import gTTS
-            import playsound
-            import tempfile
-            import os
-
-            self._speaking = True
-            tts = gTTS(text=text, lang=self.lang)
-            with tempfile.NamedTemporaryFile(delete=False, suffix='.mp3') as fp:
-                temp_path = fp.name
-            tts.save(temp_path)
-            playsound.playsound(temp_path)
-            os.unlink(temp_path)
-            self._speaking = False
-            logger.info(f"gTTS 播放: {text[:50]}...")
-            return True
+            result = subprocess.run(
+                ['espeak', '--voices'],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            voices = []
+            for line in result.stdout.split('\n')[1:]:
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 4:
+                        voices.append({
+                            'name': parts[3],
+                            'language': parts[1],
+                            'code': parts[0]
+                        })
+            return voices
         except Exception as e:
-            logger.error(f"gTTS 播放失败: {e}")
-            self._speaking = False
-            return False
-
-    def speak_async(self, text: str) -> Optional[str]:
-        import uuid
-        task_id = str(uuid.uuid4())[:8]
-
-        def _play():
-            self.speak(text)
-
-        thread = threading.Thread(target=_play, daemon=True)
-        thread.start()
-        return task_id
-
-    def is_speaking(self) -> bool:
-        return self._speaking
-
-    def stop(self) -> None:
-        self._speaking = False
-
-    def set_voice(self, voice_id: str) -> None:
-        logger.warning("gTTS 不支持切换音色")
+            logger.error(f"获取语音列表失败: {e}")
+            return []
 
 
-class SimulatedSynthesis(SpeechSynthesisInterface):
-    """模拟语音合成（仅打印）"""
-
-    def __init__(self):
-        self._speaking = False
-
-    def speak(self, text: str) -> bool:
-        print(f"\n[模拟TTS] {text}\n")
-        logger.info(f"[模拟TTS] {text}")
-        return True
-
-    def speak_async(self, text: str) -> Optional[str]:
-        import uuid
-        task_id = str(uuid.uuid4())[:8]
-        threading.Thread(target=lambda: self.speak(text), daemon=True).start()
-        return task_id
-
-    def is_speaking(self) -> bool:
-        return False
-
-    def stop(self) -> None:
-        pass
-
-    def set_voice(self, voice_id: str) -> None:
-        pass
-
-
-def create_speech_synthesis(engine: str, rate: int = 180, volume: float = 1.0) -> SpeechSynthesisInterface:
+def create_speech_synthesis(config) -> SpeechSynthesisInterface:
     """
     工厂函数：创建语音合成实例
 
     Args:
-        engine: pyttsx3 / gtts / none
-        rate: 语速（仅 pyttsx3）
-        volume: 音量（仅 pyttsx3）
+        config: Config 类实例
 
     Returns:
         SpeechSynthesisInterface 实例
     """
-    if engine == "pyttsx3":
-        try:
-            import pyttsx3
-            synthesizer = Pyttsx3Synthesis(rate, volume)
-            # 测试初始化
-            if synthesizer._init_engine():
-                return synthesizer
-            else:
-                logger.warning("pyttsx3 初始化失败，降级到模拟模式")
-        except ImportError:
-            logger.warning("pyttsx3 未安装，降级到模拟模式")
-
-    elif engine == "gtts":
-        try:
-            from gtts import gTTS
-            synthesizer = GttsSynthesis()
-            logger.info("gTTS 初始化成功")
-            return synthesizer
-        except ImportError:
-            logger.warning("gtts 未安装，降级到模拟模式")
-
-    logger.info("使用模拟语音合成模式")
-    return SimulatedSynthesis()
+    # 统一使用 espeak
+    return EspeakSynthesis(
+        rate=getattr(config, 'AUDIO_TTS_RATE', 150),
+        volume=100,
+        voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh')
+    )
