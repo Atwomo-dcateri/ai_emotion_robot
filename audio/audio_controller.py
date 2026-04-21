@@ -191,6 +191,43 @@ class AudioController:
             self._wake_word_enabled = True
             self._set_state(AudioState.IDLE)
 
+    def _handle_listening(self):
+        """LISTENING 状态：获取用户输入"""
+        # 禁用唤醒词检测
+        self._wake_word_enabled = False
+        
+        # 禁用 STT 层的唤醒词过滤（收集所有文本）
+        if hasattr(self._stt, 'enable_wake_word_filter'):
+            self._stt.enable_wake_word_filter(False)
+
+        # 设置超时
+        start_time = time.time()
+        collected_text = []
+
+        while time.time() - start_time < self._listen_timeout:
+            text = self._stt.get_text()
+            if text:
+                collected_text.append(text)
+                logger.debug(f"收集到: {text}")
+                start_time = time.time()
+            time.sleep(0.1)
+
+        # 恢复 STT 层的唤醒词过滤
+        if hasattr(self._stt, 'enable_wake_word_filter'):
+            self._stt.enable_wake_word_filter(True)
+
+        # 超时或无输入
+        if collected_text:
+            full_text = "".join(collected_text)
+            with self._pending_text_lock:
+                self._pending_text = full_text
+            logger.info(f"用户输入: {full_text}")
+            self._set_state(AudioState.PROCESSING)
+        else:
+            logger.info("监听超时，无输入")
+            self._wake_word_enabled = True
+            self._set_state(AudioState.IDLE)
+
     def _handle_processing(self):
         """PROCESSING 状态：等待外部调用 respond()"""
         # 此状态不主动做任何事，等待外部触发

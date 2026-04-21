@@ -41,39 +41,37 @@ class VoskRecognition(SpeechRecognitionInterface):
         self._running = False
         self._text_queue = queue.Queue(maxsize=20)
         self._wake_words = []
+        self._filter_wake_words = True  # 新增：是否过滤唤醒词
         self._listen_thread = None
         
         # 重采样器
         self._resampler = None
 
     def _detect_device_sample_rate(self) -> int:
-        """检测设备支持的采样率"""
         import pyaudio
-        
         p = pyaudio.PyAudio()
-        test_rates = [16000, 44100, 48000, 22050, 11025, 8000]
-        
+        # 优先测试硬件最可能支持的速率
+        test_rates = [44100, 48000, 16000, 8000]
+        supported_rate = 44100 # 默认保底
+
         for rate in test_rates:
             try:
-                stream = p.open(
-                    format=pyaudio.paInt16,
-                    channels=1,
-                    rate=rate,
-                    input=True,
-                    input_device_index=self.device_index,
-                    frames_per_buffer=1024,
-                    start=False
+                # 关键：添加异常保护，并确保检测完不立即销毁 p
+                is_supported = p.is_format_supported(
+                    rate, 
+                    input_device=self.device_index, 
+                    input_channels=1, 
+                    input_format=pyaudio.paInt16
                 )
-                stream.close()
-                p.terminate()
-                logger.info(f"设备支持采样率: {rate} Hz")
-                return rate
-            except:
+                if is_supported: # 这里 PyAudio 有自带的检测方法
+                    supported_rate = rate
+                    logger.info(f"设备原生支持采样率: {rate} Hz")
+                    break
+            except Exception:
                 continue
         
-        p.terminate()
-        logger.warning("无法检测设备采样率，使用默认 44100 Hz")
-        return 44100
+        p.terminate() # 循环结束后再销毁
+        return supported_rate
 
     def _init_resampler(self):
         """初始化重采样器"""
@@ -139,38 +137,36 @@ class VoskRecognition(SpeechRecognitionInterface):
             return resampled.astype(np.int16).tobytes()
 
     def start(self) -> bool:
-        """启动识别服务"""
         import pyaudio
         import vosk
 
         try:
-            vosk.SetLogLevel(0)
+            vosk.SetLogLevel(-1) # 减少冗余日志
             
-            # 检测设备采样率
+            # 1. 检测真实硬件速率（你会得到 44100）
             self.device_sample_rate = self._detect_device_sample_rate()
-            logger.info(f"设备采样率: {self.device_sample_rate} Hz, 目标采样率: {self.target_sample_rate} Hz")
+            # 2. Vosk 必须使用 16000 才能获得最佳效果
+            self.target_sample_rate = 16000 
             
-            # 初始化重采样器
             self._init_resampler()
             
-            # 加载模型
             self._model = vosk.Model(self.model_path)
+            # 识别器必须和最终喂给它的数据频率一致（即重采样后的 16k）
             self._recognizer = vosk.KaldiRecognizer(self._model, self.target_sample_rate)
-            self._recognizer.SetWords(False)
-            self._recognizer.SetPartialWords(False)
 
-            # 初始化 PyAudio
             self._pa = pyaudio.PyAudio()
             
-            # 打开音频流（使用设备采样率）
+            # 3. 打开音频流时使用硬件的原生速率
             self._stream = self._pa.open(
                 rate=self.device_sample_rate,
-                channels=1,
+                channels=1, # 强制单声道，解决 -9998
                 format=pyaudio.paInt16,
                 input=True,
                 input_device_index=self.device_index,
-                frames_per_buffer=int(self.device_sample_rate * 0.1)  # 100ms 缓冲区
+                # 稍微加大缓冲区，防止树莓派处理重采样时溢出
+                frames_per_buffer=int(self.device_sample_rate * 0.2) 
             )
+            # ... 其余代码保持不变 ...
 
             self._running = True
             self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
@@ -226,15 +222,30 @@ class VoskRecognition(SpeechRecognitionInterface):
             except:
                 pass
 
+    # def get_text(self) -> Optional[str]:
+    #     """非阻塞获取最新识别文本"""
+    #     try:
+    #         text = self._text_queue.get_nowait()
+    #         if self._wake_words:
+    #             for word in self._wake_words:
+    #                 if word in text:
+    #                     return text
+    #             return None
+    #         return text
+    #     except queue.Empty:
+    #         return None
     def get_text(self) -> Optional[str]:
         """非阻塞获取最新识别文本"""
         try:
             text = self._text_queue.get_nowait()
-            if self._wake_words:
+            
+            # 如果启用了唤醒词过滤
+            if self._filter_wake_words and self._wake_words:
                 for word in self._wake_words:
                     if word in text:
                         return text
-                return None
+                return None  # 不包含唤醒词，丢弃
+            
             return text
         except queue.Empty:
             return None
@@ -245,6 +256,16 @@ class VoskRecognition(SpeechRecognitionInterface):
     def set_wake_words(self, words: List[str]) -> None:
         self._wake_words = words
         logger.info(f"设置唤醒词: {words}")
+
+    def enable_wake_word_filter(self, enable: bool) -> None:
+        """
+        启用/禁用唤醒词过滤
+        
+        Args:
+            enable: True=只返回包含唤醒词的文本，False=返回所有文本
+        """
+        self._filter_wake_words = enable
+        logger.debug(f"唤醒词过滤: {'启用' if enable else '禁用'}")
 
     def stop(self) -> None:
         """停止识别服务"""
