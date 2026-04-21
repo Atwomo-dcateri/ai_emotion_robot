@@ -7,7 +7,7 @@ import time
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 # 导入视觉模块
-from vision.vision import VisionModule
+from archive.visionn import VisionModule
 
 def main():
     print("=" * 50)

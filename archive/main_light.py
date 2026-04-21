@@ -6,7 +6,7 @@ import time
 # 添加项目根目录到模块搜索路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from vision.vision import VisionModule
+from archive.visionn import VisionModule
 from hardware.oled_simulator import HardwareSimulator
 
 def main():

@@ -7,7 +7,7 @@ import threading
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from vision.vision import VisionModule
+from archive.visionn import VisionModule
 from hardware.oled_driver import RealOLEDHardware
 from decision.engine_oled import DecisionEngine
 

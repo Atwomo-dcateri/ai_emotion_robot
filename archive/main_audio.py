@@ -14,7 +14,7 @@ import threading
 # 添加项目根目录到路径
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from vision.vision import VisionModule
+from archive.visionn import VisionModule
 from decision.llm_cloud import DecisionEngine
 from hardware.oled_driver import OLEDDisplay
 from archive.audio_module_simple import AudioModule

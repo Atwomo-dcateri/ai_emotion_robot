@@ -2,17 +2,21 @@
 import os
 
 class Config:
-    # ========== 硬件配置 ==========
-    OLED_ENABLED = True
-    OLED_I2C_ADDRESS = 0x3C
-    OLED_I2C_PORT = 1
-    OLED_DEVICE_TYPE = 'ssd1306'
+    # ========== 视觉配置 ==========
+    CAMERA_ID = 0                    # 摄像头设备 ID
+    CAMERA_WIDTH = 640               # 采集宽度
+    CAMERA_HEIGHT = 480              # 采集高度
+    CAMERA_FPS = 30                  # 目标帧率
 
-    CAMERA_ID = 0
-    CAMERA_WIDTH = 640
-    CAMERA_HEIGHT = 480
+    VISION_ENABLED = True            # 是否启用视觉模块
+    VISION_ANALYSIS_INTERVAL = 0.5   # 分析间隔（秒）
 
-    FACE_DETECTION_INTERVAL = 0.5
+    # 表情分析阈值（可调节）
+    VISION_EYE_SIZE_THRESHOLD = 0.025      # 大眼睛/小眼睛阈值
+    VISION_MOUTH_SIZE_THRESHOLD = 0.04     # 大嘴巴阈值
+    VISION_MOUTH_POSITION_THRESHOLD = 0.6  # 嘴巴位置阈值（低=高，高=低）
+    VISION_EYE_SIZE_SMALL = 0.02           # 小眼睛阈值
+    VISION_MOUTH_SIZE_SMALL = 0.02         # 小嘴巴阈值
 
     # ========== 语音配置 ==========
     # STT 配置
@@ -28,6 +32,15 @@ class Config:
     AUDIO_TTS_RATE = 180
     AUDIO_TTS_VOLUME = 1.0
     AUDIO_TTS_VOICE = 'zh'
+
+        # ========== OLED 配置 ==========
+    OLED_ENABLED = True
+    OLED_I2C_ADDRESS = 0x3C
+    OLED_I2C_PORT = 1
+    OLED_DEVICE_TYPE = 'ssd1106'  # ssd1306 或 sh1106
+    OLED_WIDTH = 128
+    OLED_HEIGHT = 64
+
     # ========== API 配置 ==========
     DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
     LLM_SIMULATION_MODE = not bool(DEEPSEEK_API_KEY)
