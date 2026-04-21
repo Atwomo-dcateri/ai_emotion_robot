@@ -10,8 +10,7 @@ import time
 from enum import Enum
 from typing import Optional, Callable, List
 
-from audio.speech_recognition import create_speech_recognition
-from audio.speech_synthesis import create_speech_synthesis
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +44,8 @@ class AudioController:
         Args:
             config: Config 类实例
         """
+        from audio.speech_recognition import create_speech_recognition
+        from audio.speech_synthesis import create_speech_synthesis
         self.config = config
 
         # 初始化 STT
@@ -160,36 +161,36 @@ class AudioController:
                     self._set_state(AudioState.LISTENING)
                     break
 
-    def _handle_listening(self):
-        """LISTENING 状态：获取用户输入"""
-        # 禁用唤醒词检测
-        self._wake_word_enabled = False
+    # def _handle_listening(self):
+    #     """LISTENING 状态：获取用户输入"""
+    #     # 禁用唤醒词检测
+    #     self._wake_word_enabled = False
 
-        # 设置超时
-        start_time = time.time()
-        collected_text = []
+    #     # 设置超时
+    #     start_time = time.time()
+    #     collected_text = []
 
-        while time.time() - start_time < self._listen_timeout:
-            text = self._stt.get_text()
-            if text:
-                collected_text.append(text)
-                logger.debug(f"收集到: {text}")
-                # 重置超时计时器（有输入时延长）
-                start_time = time.time()
+    #     while time.time() - start_time < self._listen_timeout:
+    #         text = self._stt.get_text()
+    #         if text:
+    #             collected_text.append(text)
+    #             logger.debug(f"收集到: {text}")
+    #             # 重置超时计时器（有输入时延长）
+    #             start_time = time.time()
 
-            time.sleep(0.1)
+    #         time.sleep(0.1)
 
-        # 超时或无输入
-        if collected_text:
-            full_text = "".join(collected_text)
-            with self._pending_text_lock:
-                self._pending_text = full_text
-            logger.info(f"用户输入: {full_text}")
-            self._set_state(AudioState.PROCESSING)
-        else:
-            logger.info("监听超时，无输入")
-            self._wake_word_enabled = True
-            self._set_state(AudioState.IDLE)
+    #     # 超时或无输入
+    #     if collected_text:
+    #         full_text = "".join(collected_text)
+    #         with self._pending_text_lock:
+    #             self._pending_text = full_text
+    #         logger.info(f"用户输入: {full_text}")
+    #         self._set_state(AudioState.PROCESSING)
+    #     else:
+    #         logger.info("监听超时，无输入")
+    #         self._wake_word_enabled = True
+    #         self._set_state(AudioState.IDLE)
 
     def _handle_listening(self):
         """LISTENING 状态：获取用户输入"""

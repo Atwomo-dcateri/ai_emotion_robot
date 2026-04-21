@@ -40,7 +40,10 @@ class Config:
     OLED_DEVICE_TYPE = 'ssd1106'  # ssd1306 或 sh1106
     OLED_WIDTH = 128
     OLED_HEIGHT = 64
-
+    # ========== Fusion 配置 ==========
+    FUSION_CONSUME_SPEECH = True           # 是否自动消费语音输入
+    FUSION_TIMESTAMP_FORMAT = '%H:%M:%S'   # 时间格式化（用于日志）
+    
     # ========== API 配置 ==========
     DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
     LLM_SIMULATION_MODE = not bool(DEEPSEEK_API_KEY)

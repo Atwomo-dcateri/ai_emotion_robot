@@ -181,20 +181,43 @@ class EspeakSynthesis(SpeechSynthesisInterface):
             logger.error(f"获取语音列表失败: {e}")
             return []
 
+    
+
+# def create_speech_synthesis(config) -> SpeechSynthesisInterface:
+#     """
+#     工厂函数：创建语音合成实例
+
+#     Args:
+#         config: Config 类实例
+
+#     Returns:
+#         SpeechSynthesisInterface 实例
+#     """
+#     # 统一使用 espeak
+#     return EspeakSynthesis(
+#         rate=getattr(config, 'AUDIO_TTS_RATE', 150),
+#         volume=100,
+#         voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh')
+#     )
+    
 
 def create_speech_synthesis(config) -> SpeechSynthesisInterface:
-    """
-    工厂函数：创建语音合成实例
+        """
+        工厂函数：创建语音合成实例
 
-    Args:
-        config: Config 类实例
+        Args:
+            config: Config 类实例
 
-    Returns:
-        SpeechSynthesisInterface 实例
-    """
-    # 统一使用 espeak
-    return EspeakSynthesis(
-        rate=getattr(config, 'AUDIO_TTS_RATE', 150),
-        volume=100,
-        voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh')
-    )
+        Returns:
+            SpeechSynthesisInterface 实例
+        """
+        engine = getattr(config, 'AUDIO_TTS_ENGINE', 'espeak')
+        
+        if engine == 'espeak':
+            return EspeakSynthesis(
+                rate=getattr(config, 'AUDIO_TTS_RATE', 150),
+                volume=100,
+                voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh')
+            )
+        else:
+            raise ValueError(f"不支持的 TTS 引擎: {engine}")

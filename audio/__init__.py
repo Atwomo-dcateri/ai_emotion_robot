@@ -3,7 +3,7 @@
 功能描述：语音识别与合成模块
 """
 
-from audio.audio_controller import AudioController, AudioState
+from audio.audio_controller import AudioController
 from audio.base import SpeechRecognitionInterface, SpeechSynthesisInterface
 
 __all__ = [
