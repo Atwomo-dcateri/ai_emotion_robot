@@ -44,9 +44,13 @@ class Config:
     FUSION_CONSUME_SPEECH = True           # 是否自动消费语音输入
     FUSION_TIMESTAMP_FORMAT = '%H:%M:%S'   # 时间格式化（用于日志）
     
-    # ========== API 配置 ==========
-    DEEPSEEK_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')
-    LLM_SIMULATION_MODE = not bool(DEEPSEEK_API_KEY)
+    # ========== Decision 配置 ==========
+    DECISION_USE_LLM = True                      # 是否启用 LLM
+    DECISION_LLM_API_KEY = os.environ.get('DEEPSEEK_API_KEY', '')  # API 密钥
+    DECISION_LLM_API_URL = 'https://api.deepseek.com/v1/chat/completions'
+    DECISION_LLM_MODEL = 'deepseek-chat'
+    DECISION_LLM_TIMEOUT = 15                    # 请求超时（秒）
+    DECISION_FALLBACK_RULES = None               # 自定义规则（可选）
 
     # ========== 日志配置 ==========
     LOG_LEVEL = 'INFO'
