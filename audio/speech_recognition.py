@@ -171,7 +171,7 @@ class VoskRecognition(SpeechRecognitionInterface):
             self._running = True
             self._listen_thread = threading.Thread(target=self._listen_loop, daemon=True)
             self._listen_thread.start()
-
+            print(f"[DEBUG] Vosk 启动: device={self.device_index}, rate={self.device_sample_rate}")
             logger.info(f"Vosk 识别启动成功")
             return True
 
@@ -180,9 +180,41 @@ class VoskRecognition(SpeechRecognitionInterface):
             self._cleanup()
             return False
 
+    # def _listen_loop(self):
+    #     """后台监听循环"""
+    #     import time
+        
+    #     while self._running:
+    #         try:
+    #             # 读取原始数据
+    #             chunk_size = int(self.device_sample_rate * 0.1)  # 100ms
+    #             data = self._stream.read(chunk_size, exception_on_overflow=False)
+                
+    #             if data and len(data) > 0:
+    #                 # 重采样
+    #                 resampled_data = self._resample(data)
+                    
+    #                 if self._recognizer.AcceptWaveform(resampled_data):
+    #                     result = json.loads(self._recognizer.Result())
+    #                     text = result.get("text", "").strip()
+    #                     if text:
+    #                         self._text_queue.put(text)
+    #                         logger.debug(f"识别: {text}")
+
+    #         except IOError as e:
+    #             if e.errno not in (-9999, -9981):
+    #                 logger.warning(f"音频错误: {e}")
+    #             time.sleep(0.05)
+    #         except Exception as e:
+    #             logger.error(f"识别循环异常: {e}")
+    #             time.sleep(0.1)
     def _listen_loop(self):
-        """后台监听循环"""
+        """后台监听循环（支持部分结果收集和静音强制结束）"""
         import time
+        
+        silence_frames = 0
+        SILENCE_THRESHOLD = 15  # 约 1.5 秒静音后强制结束（每帧 100ms）
+        last_partial = ""
         
         while self._running:
             try:
@@ -195,11 +227,42 @@ class VoskRecognition(SpeechRecognitionInterface):
                     resampled_data = self._resample(data)
                     
                     if self._recognizer.AcceptWaveform(resampled_data):
+                        # 最终结果
                         result = json.loads(self._recognizer.Result())
                         text = result.get("text", "").strip()
                         if text:
                             self._text_queue.put(text)
                             logger.debug(f"识别: {text}")
+                            last_partial = ""
+                            silence_frames = 0
+                    else:
+                        # 部分结果
+                        partial = json.loads(self._recognizer.PartialResult())
+                        partial_text = partial.get("partial", "").strip()
+                        
+                        if partial_text:
+                            # 有部分结果，重置静音计数
+                            last_partial = partial_text
+                            silence_frames = 0
+                            logger.debug(f"部分: {partial_text}")
+                        else:
+                            # 无部分结果，增加静音计数
+                            silence_frames += 1
+                            
+                            # 静音超时且有部分结果，强制结束
+                            if silence_frames > SILENCE_THRESHOLD and last_partial:
+                                # 强制获取最终结果
+                                final_result = json.loads(self._recognizer.FinalResult())
+                                final_text = final_result.get("text", "").strip()
+                                if final_text:
+                                    self._text_queue.put(final_text)
+                                    logger.debug(f"强制结束: {final_text}")
+                                else:
+                                    # 如果没有最终结果，使用部分结果
+                                    self._text_queue.put(last_partial)
+                                    logger.debug(f"使用部分结果: {last_partial}")
+                                last_partial = ""
+                                silence_frames = 0
 
             except IOError as e:
                 if e.errno not in (-9999, -9981):
@@ -234,18 +297,35 @@ class VoskRecognition(SpeechRecognitionInterface):
     #         return text
     #     except queue.Empty:
     #         return None
+    # def get_text(self) -> Optional[str]:
+    #     """非阻塞获取最新识别文本"""
+    #     try:
+    #         text = self._text_queue.get_nowait()
+            
+    #         # 如果启用了唤醒词过滤
+    #         if self._filter_wake_words and self._wake_words:
+    #             for word in self._wake_words:
+    #                 if word in text:
+    #                     return text
+    #             return None  # 不包含唤醒词，丢弃
+            
+    #         return text
+    #     except queue.Empty:
+    #         return None
+
     def get_text(self) -> Optional[str]:
         """非阻塞获取最新识别文本"""
         try:
             text = self._text_queue.get_nowait()
             
-            # 如果启用了唤醒词过滤
+            # 如果启用了唤醒词过滤（IDLE 状态）
             if self._filter_wake_words and self._wake_words:
                 for word in self._wake_words:
                     if word in text:
                         return text
                 return None  # 不包含唤醒词，丢弃
             
+            # LISTENING 状态不过滤，返回所有文本
             return text
         except queue.Empty:
             return None

@@ -77,17 +77,19 @@ class AudioController:
         # 设置唤醒词
         self._stt.set_wake_words(self._wake_words)
 
+        print(f"[DEBUG] AudioController 唤醒词: {self._wake_words}")
+        print(f"[DEBUG] STT 实例 ID: {id(self._stt)}")
     def start(self) -> bool:
         """启动语音服务"""
         if self._running:
             logger.warning("语音服务已在运行")
             return True
-
+        print(f"[DEBUG] 启动 STT...")
         # 启动 STT
         if not self._stt.start():
             logger.error("STT 启动失败")
             return False
-
+        print(f"[DEBUG] STT 启动成功, running={self._stt.is_listening()}")
         self._running = True
         self._worker_thread = threading.Thread(target=self._state_worker, daemon=True)
         self._worker_thread.start()
@@ -142,18 +144,36 @@ class AudioController:
             elif current_state == AudioState.SPEAKING:
                 self._handle_speaking()
 
-            time.sleep(0.05)
+            time.sleep(0.2)
+
+    # def _handle_idle(self):
+    #     """IDLE 状态：监听唤醒词"""
+    #     if not self._wake_word_enabled:
+    #         return
+
+    #     text = self._stt.get_text()
+    #     if text:
+    #         # 检查唤醒词
+    #         for word in self._wake_words:
+    #             if word in text:
+    #                 logger.info(f"检测到唤醒词: '{word}'")
+    #                 if self._wake_word_callback:
+    #                     self._wake_word_callback()
+    #                 self._set_state(AudioState.LISTENING)
+    #                 break
 
     def _handle_idle(self):
-        """IDLE 状态：监听唤醒词"""
         if not self._wake_word_enabled:
+            print("[DEBUG] wake_word_enabled = False")
             return
-
+        
         text = self._stt.get_text()
+        time.sleep(0.4)
+        
         if text:
-            # 检查唤醒词
             for word in self._wake_words:
                 if word in text:
+                    print(f"[DEBUG] 匹配唤醒词: '{word}'")  # 添加
                     logger.info(f"检测到唤醒词: '{word}'")
                     if self._wake_word_callback:
                         self._wake_word_callback()
@@ -177,7 +197,7 @@ class AudioController:
                 # 重置超时计时器（有输入时延长）
                 start_time = time.time()
 
-            time.sleep(0.1)
+            time.sleep(0.2)
 
         # 超时或无输入
         if collected_text:
