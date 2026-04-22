@@ -4,7 +4,8 @@
 COMMIT_MESSAGE=""
 INTERVAL_MINUTES=0
 MAX_COMMITS=0
-LOG_FILE="git-auto-commit.log"
+# --- 修改部分：初始文件名 ---
+LOG_FILENAME="git-auto-commit.log" 
 HELP=false
 
 # 解析命令行参数
@@ -23,7 +24,8 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -LogFile|--log-file)
-            LOG_FILE="$2"
+            # 如果用户手动指定了路径，我们提取文件名
+            LOG_FILENAME=$(basename "$2")
             shift 2
             ;;
         -Help|--help)
@@ -37,6 +39,17 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# --- 新增逻辑：确保根目录下的 log 文件夹存在并设置路径 ---
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/logs"
+
+if [ ! -d "$LOG_DIR" ]; then
+    mkdir -p "$LOG_DIR"
+fi
+
+# 最终日志完整路径
+LOG_FILE="$LOG_DIR/$LOG_FILENAME"
 
 # 日志函数
 log_message() {
@@ -122,29 +135,8 @@ Options:
     --commit-message <string>   Custom commit message (default: auto-generated timestamp)
     --interval <int>            Run every N minutes (0 = run once, default: 0)
     --max-commits <int>         Maximum number of commits (0 = unlimited, default: 0)
-    --log-file <path>           Log file path (default: git-auto-commit.log)
+    --log-file <filename>       Log filename (saved in ./log/ folder, default: git-auto-commit.log)
     --help                      Show this help message
-
-Examples:
-    # Single commit with auto-generated message
-    ./git-auto-commit.sh
-
-    # Single commit with custom message
-    ./git-auto-commit.sh --commit-message "Update documentation"
-
-    # Run every 30 minutes with unlimited commits
-    ./git-auto-commit.sh --interval 30
-
-    # Run every 15 minutes, max 10 commits
-    ./git-auto-commit.sh --interval 15 --max-commits 10
-
-    # Custom log file location
-    ./git-auto-commit.sh --log-file "/var/log/git-commits.log"
-
-Note:
-    - This script will add all changes (git add .)
-    - Make sure you have push permissions to the remote repository
-    - Press Ctrl+C to stop the script when running in interval mode
 EOF
 }
 
@@ -156,6 +148,7 @@ fi
 
 log_message "========================================"
 log_message "Git Auto Commit Script Started"
+log_message "Log location: $LOG_FILE"
 log_message "========================================"
 
 if [[ $INTERVAL_MINUTES -gt 0 ]]; then
@@ -183,7 +176,7 @@ if [[ $INTERVAL_MINUTES -gt 0 ]]; then
     done
 else
     log_message "Running in single commit mode"
-    invoke_git_commit "$COMMIT_MESSAGE" > /dev/null
+    invoke_git_commit "$COMMIT_MESSAGE"
 fi
 
 log_message "========================================"
