@@ -33,7 +33,7 @@ class Config:
     AUDIO_TTS_VOLUME = 1.0
     AUDIO_TTS_VOICE = 'zh'
 
-        # ========== OLED 配置 ==========
+    # ========== OLED 配置 ==========
     OLED_ENABLED = True
     OLED_I2C_ADDRESS = 0x3C
     OLED_I2C_PORT = 1
@@ -56,6 +56,14 @@ class Config:
     LOG_LEVEL = 'INFO'
     LOG_DIR = 'logs'
 
+    # ========== 通信配置 ==========
+    COMM_ENABLED = True                      # 是否启用串口通信
+    COMM_SIMULATION_MODE = False             # 是否启用 STM32 模拟器（无硬件调试用）
+    COMM_SERIAL_PORT = '/dev/ttyAMA0'        # 串口设备路径
+    COMM_BAUDRATE = 115200                   # 波特率
+    COMM_TIMEOUT = 0.1                       # 读取超时（秒）
+    COMM_RECONNECT_INTERVAL = 3.0            # 断线重连间隔
+    COMM_HEARTBEAT_INTERVAL = 1.0            # 健康数据上报间隔（由 STM32 控制）
     @classmethod
     def from_env(cls):
         """从环境变量加载配置"""
