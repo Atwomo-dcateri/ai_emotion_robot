@@ -11,7 +11,7 @@ import queue
 import serial
 import serial.tools.list_ports
 
-from communication.protocol import FRAME_HEAD, FRAME_TAIL, unpack_frame
+from communication.protocol import FRAME_HEAD, FRAME_TAIL, MAX_DATA_LEN, FRAME_MIN_LEN, unpack_frame
 
 logger = logging.getLogger(__name__)
 
@@ -174,14 +174,12 @@ class SerialComm:
             try:
                 data = ser.read(256)
                 if data:
-                    buffer += data
-                    # 处理缓冲区中的完整帧
-                    frames = self._extract_frames(buffer)
+                    # 用 LEN 字段定位帧边界，避免误判 0xBB
+                    frames, buffer = self._extract_frames(buffer + data)
                     for frame in frames:
                         if self._frame_callback:
                             self._frame_callback(frame)
-                    # 保留缓冲区中不完整的部分
-                    buffer = self._keep_incomplete(buffer)
+                    # buffer 已被 _extract_frames 修剪，无需额外操作
                 else:
                     # 超时无数据，检查连接状态
                     time.sleep(0.01)
@@ -190,39 +188,58 @@ class SerialComm:
                 self._close_serial()
                 time.sleep(0.1)
 
-    def _extract_frames(self, buffer: bytes) -> list:
-        """从缓冲区提取完整帧"""
+    def _extract_frames(self, buffer: bytes) -> tuple:
+        """
+        基于 LEN 字段提取完整帧（与 STM32 comm_parser.c 逻辑一致）
+
+        先通过 FRAME_HEAD 定位帧头，再读取 LEN 字段计算帧长，
+        收齐后通过 unpack_frame 验证 CRC+TAIL，避免 payload 中的 0xBB 误匹配。
+
+        Args:
+            buffer: 接收缓冲区
+
+        Returns:
+            (frames, remaining): 完整帧列表 + 剩余未处理数据
+        """
         frames = []
-        pos = 0
 
-        while pos < len(buffer):
-            # 查找帧头
-            head_pos = buffer.find(FRAME_HEAD, pos)
-            if head_pos == -1:
+        while True:
+            if len(buffer) < FRAME_MIN_LEN:
                 break
 
-            # 查找帧尾
-            tail_pos = buffer.find(FRAME_TAIL, head_pos + 2)
-            if tail_pos == -1:
+            head = buffer.find(FRAME_HEAD)
+            if head == -1:
+                # 无帧头，保留最后一个字节防止丢 AA
+                buffer = buffer[-1:]
                 break
 
-            # 提取候选帧
-            frame = buffer[head_pos:tail_pos + 1]
-            frames.append(frame)
+            if head > 0:
+                # 丢弃帧头前的垃圾数据
+                buffer = buffer[head:]
+                continue
 
-            pos = tail_pos + 1
+            # 已对齐帧头，检查能否获取 LEN
+            if len(buffer) < 4:
+                break  # 等更多数据
 
-        return frames
+            data_len = buffer[3]
+            if data_len > MAX_DATA_LEN:
+                buffer = buffer[1:]  # 丢弃误匹配的 AA
+                continue
 
-    def _keep_incomplete(self, buffer: bytes) -> bytes:
-        """保留不完整的帧数据"""
-        # 查找最后一个帧头
-        last_head = buffer.rfind(FRAME_HEAD)
-        if last_head == -1:
-            return b''
+            total = 2 + 1 + 1 + data_len + 2 + 1  # HEAD + TYPE + LEN + DATA + CRC + TAIL
+            if len(buffer) < total:
+                break  # 等更多数据
 
-        # 保留从最后一个帧头开始的数据
-        return buffer[last_head:]
+            candidate = buffer[:total]
+            if unpack_frame(candidate) is not None:
+                frames.append(candidate)
+                buffer = buffer[total:]
+            else:
+                # CRC/TAIL 校验失败，推进一个字节
+                buffer = buffer[1:]
+
+        return frames, buffer
 
     def _write_loop(self):
         """发送线程：从队列取帧并发送"""
