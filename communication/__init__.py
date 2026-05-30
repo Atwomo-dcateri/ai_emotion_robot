@@ -4,7 +4,10 @@
 """
 
 from communication.base import CommunicationInterface
-from communication.comm_controller import CommController
+try:
+    from communication.comm_controller import CommController
+except ImportError:
+    CommController = None  # comm_controller 尚未实现
 from communication.protocol import (
     TYPE_HEARTBEAT, TYPE_SENSOR_STATUS, TYPE_ACK, TYPE_NAK,
     TYPE_OLED, TYPE_SERVO, TYPE_QUERY_SENSOR, TYPE_CONFIG,
