@@ -366,5 +366,16 @@ def create_speech_recognition(config) -> SpeechRecognitionInterface:
             sample_rate=config.AUDIO_SAMPLE_RATE,
             device_index=getattr(config, 'AUDIO_DEVICE_INDEX', None)
         )
+    elif config.AUDIO_STT_ENGINE == "baidu":
+        from audio.baidu_stt import BaiduRecognition
+        return BaiduRecognition(
+            api_key=getattr(config, 'BAIDU_ASR_API_KEY', ''),
+            secret_key=getattr(config, 'BAIDU_ASR_SECRET_KEY', ''),
+            app_id=getattr(config, 'BAIDU_ASR_APP_ID', ''),
+            sample_rate=getattr(config, 'AUDIO_SAMPLE_RATE', 16000),
+            device_index=getattr(config, 'AUDIO_DEVICE_INDEX', None),
+            silence_timeout=getattr(config, 'ASR_SILENCE_TIMEOUT', 0.8),
+            min_audio_duration=getattr(config, 'ASR_MIN_AUDIO_DURATION', 0.5),
+        )
     else:
         raise ValueError(f"不支持的 STT 引擎: {config.AUDIO_STT_ENGINE}")

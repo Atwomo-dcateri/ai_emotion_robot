@@ -24,7 +24,12 @@ class FusionInterface(ABC):
                 'face_emotion': dict | None,  # 情绪结果
                 'speech_text': str | None,    # 语音识别文本
                 'speech_has_new': bool,       # 是否有未消费的新输入
-                'heart_rate': None,           # 预留
+                'heart_rate': int | None,     # 心率值
+                'heart_rate_valid': bool,     # 心率是否有效
+                'oxygen': int | None,         # 血氧值
+                'oxygen_valid': bool,         # 血氧是否有效
+                'is_finger_detected': bool,   # 是否检测到手指
+                'sensor_status': str | None,  # 传感器状态
                 'fusion_ready': bool          # 融合数据是否有效
             }
         """
@@ -48,6 +53,16 @@ class FusionInterface(ABC):
     @abstractmethod
     def get_speech_text(self) -> Optional[str]:
         """快捷获取语音文本（自动消费）"""
+        pass
+
+    @abstractmethod
+    def get_health_data(self) -> Optional[Dict[str, Any]]:
+        """获取最新健康数据"""
+        pass
+
+    @abstractmethod
+    def is_finger_detected(self) -> bool:
+        """是否检测到手指（传感器有效）"""
         pass
 
     @abstractmethod

@@ -4,6 +4,7 @@
 依赖：espeak 系统命令
 """
 
+import os
 import logging
 import threading
 import subprocess
@@ -17,16 +18,19 @@ logger = logging.getLogger(__name__)
 class EspeakSynthesis(SpeechSynthesisInterface):
     """espeak 离线语音合成"""
 
-    def __init__(self, rate: int = 150, volume: int = 100, voice: str = 'zh'):
+    def __init__(self, rate: int = 150, volume: int = 100, voice: str = 'zh',
+                 device: str = None):
         """
         Args:
             rate: 语速（单词/分钟），默认 150，中文建议 130-160
             volume: 音量 0-200，默认 100
             voice: 语音，'zh' 为中文，'en' 为英文，'zh+f1' 为女声
+            device: ALSA 输出设备，如 'plughw:2,0'（None=系统默认）
         """
         self.rate = rate
         self.volume = volume
         self.voice = voice
+        self.device = device
         self._speaking = False
         self._lock = threading.Lock()
         self._available = None
@@ -88,6 +92,13 @@ class EspeakSynthesis(SpeechSynthesisInterface):
                 text
             ]
 
+            # 设置音频输出设备（继承现有环境，仅覆盖 AUDIODEV）
+            env = None
+            if self.device:
+                env = os.environ.copy()
+                env['AUDIODEV'] = self.device
+                logger.debug(f"TTS 输出设备: {self.device}")
+
             logger.info(f"TTS 播放: {text[:50]}...")
 
             try:
@@ -96,7 +107,8 @@ class EspeakSynthesis(SpeechSynthesisInterface):
                     cmd,
                     capture_output=True,
                     text=True,
-                    timeout=30
+                    timeout=30,
+                    env=env
                 )
                 self._speaking = False
                 return True
@@ -217,7 +229,8 @@ def create_speech_synthesis(config) -> SpeechSynthesisInterface:
             return EspeakSynthesis(
                 rate=getattr(config, 'AUDIO_TTS_RATE', 150),
                 volume=100,
-                voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh')
+                voice=getattr(config, 'AUDIO_TTS_VOICE', 'zh'),
+                device=getattr(config, 'AUDIO_TTS_DEVICE', None)
             )
         else:
             raise ValueError(f"不支持的 TTS 引擎: {engine}")

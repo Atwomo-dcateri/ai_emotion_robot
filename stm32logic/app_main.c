@@ -387,14 +387,13 @@ void vExecute(void)
             static uint32_t s_last_update = 0U;
             char buf[21];
 
-            if (!s_max30102_ok) break;
-
-            /* 处理接收到的命令帧 + 定时心跳上报 */
+            /* 通信处理必须始终运行，不受 MAX30102 状态影响 */
             Parser_Process();
             Handler_Tick();
 
-            /* 缓冲区满 → 运行算法 + 滑窗移位 */
-            if (s_recalc_needed) {
+            if (s_max30102_ok) {
+                /* 缓冲区满 → 运行算法 + 滑窗移位 */
+                if (s_recalc_needed) {
                 int32_t n_sp02 = 0, n_hr = 0;
                 int8_t ch_spo2_valid = 0, ch_hr_valid = 0;
                 uint16_t i;
@@ -419,6 +418,7 @@ void vExecute(void)
                 }
                 s_sample_count = MAX30102_BUF_LEN - 100;
             }
+            }  /* if (s_max30102_ok) */
 
             /* 限速刷新 OLED（每 500ms）避免闪烁 */
             if (HAL_GetTick() - s_last_update >= 500) {

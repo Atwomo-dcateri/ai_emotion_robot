@@ -21,13 +21,15 @@ class LLMEngine(DecisionInterface):
     使用 DeepSeek API 生成自然语言反应
     """
 
-    # 系统提示词
+    # 系统提示词（扩展健康数据）
     SYSTEM_PROMPT = """你是一个情感交互机器人，需要根据用户状态生成自然反应。
 
 输入格式：
 - emotion: 用户情绪（开心/悲伤/愤怒/恐惧/惊讶/平静）
 - confidence: 情绪置信度（0-100）
 - speech: 用户说的话（可能为空）
+- heart_rate: 心率（可能为空，单位 bpm）
+- oxygen: 血氧饱和度（可能为空，单位 %）
 
 输出格式（严格 JSON，不要输出其他内容）：
 {
@@ -40,6 +42,7 @@ class LLMEngine(DecisionInterface):
 - 有同理心：对用户情绪做出恰当反应
 - 简洁自然：话语简短，像朋友聊天
 - 主动关怀：情绪低落时可主动询问
+- 健康提醒：如果心率/血氧异常，可以适当提醒（但不提供医疗建议）
 - 安全边界：不提供医疗、心理咨询建议
 """
 
@@ -70,23 +73,57 @@ class LLMEngine(DecisionInterface):
             logger.info("LLM 引擎初始化完成")
 
     def _build_prompt(self, user_state: Dict[str, Any]) -> str:
-        """构建用户提示词"""
+        """
+        构建用户提示词（扩展健康数据）
+
+        Args:
+            user_state: Fusion 状态字典
+
+        Returns:
+            提示词字符串
+        """
         face_emotion = user_state.get('face_emotion')
         speech_text = user_state.get('speech_text')
+        hr = user_state.get('heart_rate')
+        hr_valid = user_state.get('heart_rate_valid', False)
+        oxygen = user_state.get('oxygen')
+        oxygen_valid = user_state.get('oxygen_valid', False)
 
+        prompt_lines = []
+
+        # 情绪信息
         if face_emotion:
             emotion = face_emotion.get('emotion_cn', '平静')
             confidence = face_emotion.get('confidence', 50)
-            prompt = f"用户情绪：{emotion}（置信度 {confidence:.0f}%）\n用户说话：{speech_text if speech_text else '无'}"
+            prompt_lines.append(f"用户情绪：{emotion}（置信度 {confidence:.0f}%）")
         else:
-            prompt = f"用户情绪：未检测到\n用户说话：{speech_text if speech_text else '无'}"
+            prompt_lines.append("用户情绪：未检测到")
 
-        return prompt
+        # 语音信息
+        prompt_lines.append(f"用户说话：{speech_text if speech_text else '无'}")
+
+        # 健康数据（仅当数值超出 config 阈值时才提示，避免干扰正常对话）
+        health_info = []
+        hr_high = getattr(self._config, 'HEART_RATE_HIGH_THRESHOLD', 120)
+        hr_low = getattr(self._config, 'HEART_RATE_LOW_THRESHOLD', 50)
+        ox_low = getattr(self._config, 'OXYGEN_LOW_THRESHOLD', 90)
+        if hr_valid and hr:
+            if hr > hr_high or hr < hr_low:
+                health_info.append(f"心率：{hr}bpm（异常）")
+        if oxygen_valid and oxygen:
+            if oxygen < ox_low:
+                health_info.append(f"血氧：{oxygen}%（异常）")
+
+        if health_info:
+            prompt_lines.append(f"健康数据：{'，'.join(health_info)}")
+        else:
+            prompt_lines.append("健康数据：无")
+
+        return "\n".join(prompt_lines)
 
     def _parse_response(self, response_text: str) -> Optional[Dict]:
         """解析 LLM 响应"""
         try:
-            # 尝试提取 JSON
             response_text = response_text.strip()
 
             # 移除可能的 markdown 代码块标记
@@ -144,52 +181,60 @@ class LLMEngine(DecisionInterface):
             "max_tokens": 200
         }
 
-        try:
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=payload,
-                timeout=self.timeout
-            )
-            response.raise_for_status()
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
 
-            data = response.json()
-            content = data['choices'][0]['message']['content']
+                data = response.json()
+                content = data['choices'][0]['message']['content']
 
-            result = self._parse_response(content)
-            if not result:
+                result = self._parse_response(content)
+                if not result:
+                    if attempt == max_retries - 1:
+                        return []
+                    continue
+
+                # 转换为动作指令
+                actions = []
+
+                # OLED 表情
+                oled_emotion = result.get('oled_emotion', '平静')
+                confidence = user_state.get('face_emotion', {}).get('confidence', 75) if user_state.get('face_emotion') else 75
+                actions.append({'type': 'oled', 'emotion': oled_emotion, 'confidence': confidence})
+
+                # 语音回复
+                speech_text = result.get('speech')
+                if speech_text:
+                    actions.append({'type': 'speak', 'text': speech_text})
+
+                # 舵机动作
+                action = result.get('action', 'none')
+                if action in ['nod', 'shake']:
+                    actions.append({'type': 'servo', 'move': action, 'times': 1})
+
+                logger.info(f"LLM 决策: {result}")
+                return actions
+
+            except requests.Timeout:
+                logger.error(f"LLM 请求超时 (尝试 {attempt + 1}/{max_retries})")
+                if attempt == max_retries - 1:
+                    return []
+            except requests.RequestException as e:
+                logger.error(f"LLM 请求失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+                if attempt == max_retries - 1:
+                    return []
+            except Exception as e:
+                logger.error(f"LLM 决策异常: {e}")
                 return []
 
-            # 转换为动作指令
-            actions = []
-
-            # OLED 表情
-            oled_emotion = result.get('oled_emotion', '平静')
-            confidence = user_state.get('face_emotion', {}).get('confidence', 75) if user_state.get('face_emotion') else 75
-            actions.append({'type': 'oled', 'emotion': oled_emotion, 'confidence': confidence})
-
-            # 语音回复
-            speech_text = result.get('speech')
-            if speech_text:
-                actions.append({'type': 'speak', 'text': speech_text})
-
-            # 舵机动作
-            action = result.get('action', 'none')
-            if action in ['nod', 'shake']:
-                actions.append({'type': 'servo', 'move': action, 'times': 1})
-
-            logger.info(f"LLM 决策: {result}")
-            return actions
-
-        except requests.Timeout:
-            logger.error("LLM 请求超时")
-            return []
-        except requests.RequestException as e:
-            logger.error(f"LLM 请求失败: {e}")
-            return []
-        except Exception as e:
-            logger.error(f"LLM 决策异常: {e}")
-            return []
+        return []
 
     def is_ready(self) -> bool:
         """返回 LLM 引擎是否就绪"""

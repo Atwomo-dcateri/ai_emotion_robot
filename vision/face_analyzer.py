@@ -35,8 +35,9 @@ class FaceAnalyzer:
         self.config = config
 
         # 加载 Haar Cascade 分类器
+        # 使用 alt2 级联分类器（比 default 更敏感）
         self.face_cascade = cv2.CascadeClassifier(
-            cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
+            cv2.data.haarcascades + 'haarcascade_frontalface_alt2.xml'
         )
         self.eye_cascade = cv2.CascadeClassifier(
             cv2.data.haarcascades + 'haarcascade_eye.xml'
@@ -75,8 +76,8 @@ class FaceAnalyzer:
 
         faces = self.face_cascade.detectMultiScale(
             gray,
-            scaleFactor=1.1,
-            minNeighbors=5,
+            scaleFactor=1.05,
+            minNeighbors=2,
             minSize=(30, 30)
         )
 

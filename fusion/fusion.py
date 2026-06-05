@@ -1,11 +1,12 @@
 """
 模块名称：fusion.py
-功能描述：多模态数据融合模块，汇集 Vision 和 Speech 模块输出
-依赖：time, logging
+功能描述：多模态数据融合模块，汇集 Vision、Speech 和 Health 数据
+依赖：time, logging, threading
 """
 
 import time
 import logging
+import threading
 from typing import Dict, Any, Optional
 
 from fusion.base import FusionInterface
@@ -16,71 +17,104 @@ logger = logging.getLogger(__name__)
 class FusionModule(FusionInterface):
     """
     多模态数据融合模块
-
-    职责：
-        - 汇集 Vision 和 Speech 模块的最新输出
-        - 统一时间戳
-        - 输出结构化的用户状态字典
-        - 管理语音消费标记，避免重复处理
-
-    设计原则：
-        - 轻量聚合，不做复杂推理
-        - 非阻塞读取各模块的 get_xxx() 接口
-        - 以调用时刻的时间戳作为状态快照的统一时间
-
-    **重要使用说明：**
-        - 主循环应统一调用 get_user_state() 获取状态快照
-        - get_speech_text() 依赖于 get_user_state() 先更新内部缓存
-        - 推荐使用 get_user_state() 中的 'speech_has_new' 字段判断新语音
-        - 避免混用 get_user_state() 和 get_speech_text() 两种消费方式
     """
 
-    def __init__(self, vision_module, audio_controller, config=None):
+    # 健康数据最大有效期（秒），超过此时间认为数据过期
+    HEALTH_DATA_MAX_AGE = 3.0
+
+    def __init__(self, vision_module, audio_controller, comm_controller=None, config=None):
         """
         Args:
             vision_module: VisionModule 实例
             audio_controller: AudioController 实例
+            comm_controller: CommController 实例（可选，用于获取健康数据）
             config: Config 实例（可选）
         """
         self._vision = vision_module
         self._audio = audio_controller
+        self._comm = comm_controller
         self._config = config
 
         # 语音消费管理
         self._last_speech_text = None
         self._speech_consumed = True
 
+        # 健康数据缓存（带时间戳）
+        self._health_data = None
+        self._health_timestamp = 0
+        self._sensor_status = None
+        self._sensor_status_timestamp = 0
+        self._health_lock = threading.Lock()
+
         # 消费模式配置
         self._auto_consume = getattr(config, 'FUSION_CONSUME_SPEECH', True) if config else True
 
+        # 健康数据过期时间
+        self._health_max_age = getattr(config, 'HEALTH_DATA_MAX_AGE', self.HEALTH_DATA_MAX_AGE) if config else self.HEALTH_DATA_MAX_AGE
+
+        # 注册健康数据回调
+        if self._comm:
+            self._comm.on_health_data(self._on_health_data)
+            self._comm.on_sensor_status(self._on_sensor_status)
+            logger.info("FusionModule 已注册健康数据回调")
+
         logger.info("FusionModule 初始化完成")
+
+    def _on_health_data(self, health: Dict[str, Any]) -> None:
+        """健康数据回调"""
+        with self._health_lock:
+            self._health_data = health
+            self._health_timestamp = time.time()
+            logger.debug(f"健康数据更新: HR={health.get('heart_rate')}, O2={health.get('oxygen')}")
+
+    def _on_sensor_status(self, status: Dict[str, Any]) -> None:
+        """传感器状态回调"""
+        with self._health_lock:
+            self._sensor_status = status
+            self._sensor_status_timestamp = time.time()
+            logger.debug(f"传感器状态更新: {status}")
+
+    def _get_current_health_data(self) -> Dict[str, Any]:
+        """
+        获取当前健康数据（带时效检查）
+
+        Returns:
+            健康数据字典，过期或无效时返回带默认值的字典
+        """
+        result = {
+            'heart_rate': None,
+            'heart_rate_valid': False,
+            'oxygen': None,
+            'oxygen_valid': False,
+            'is_finger_detected': False,
+            'sensor_status': None,
+            'is_health_data_fresh': False
+        }
+
+        with self._health_lock:
+            if self._health_data:
+                data_age = time.time() - self._health_timestamp
+                is_fresh = data_age < self._health_max_age
+
+                if is_fresh:
+                    result['heart_rate'] = self._health_data.get('heart_rate')
+                    result['heart_rate_valid'] = self._health_data.get('heart_rate_valid', False)
+                    result['oxygen'] = self._health_data.get('oxygen')
+                    result['oxygen_valid'] = self._health_data.get('oxygen_valid', False)
+                    result['is_health_data_fresh'] = True
+
+                result['is_finger_detected'] = result['heart_rate_valid'] or result['oxygen_valid']
+
+            if self._sensor_status:
+                status_age = time.time() - self._sensor_status_timestamp
+                if status_age < self._health_max_age:
+                    result['sensor_status'] = self._sensor_status.get('status')
+
+        return result
 
     def get_user_state(self) -> Dict[str, Any]:
         """
-        获取当前用户状态快照（推荐使用）
-
-        此方法是 Fusion 模块的主要接口，每次调用会：
-        1. 从 AudioController 获取最新语音（自动更新内部缓存）
-        2. 从 VisionModule 获取最新情绪结果
-        3. 返回统一时间戳的状态字典
-
-        **推荐使用方式：**
-            state = fusion.get_user_state()
-            if state['speech_has_new']:
-                handle_speech(state['speech_text'])
-
-        Returns:
-            用户状态字典，包含以下字段：
-            {
-                'timestamp': float,           # Unix 时间戳
-                'has_face': bool,             # 是否检测到人脸
-                'has_speech': bool,           # 是否有新语音输入
-                'face_emotion': dict | None,  # 情绪结果
-                'speech_text': str | None,    # 语音识别文本
-                'speech_has_new': bool,       # 是否有未消费的新输入
-                'heart_rate': None,           # 预留生理模块
-                'fusion_ready': bool          # 融合数据是否有效
-            }
+        获取当前用户状态快照
         """
         timestamp = time.time()
 
@@ -88,18 +122,18 @@ class FusionModule(FusionInterface):
         emotion_result = self._vision.get_emotion() if self._vision else None
         has_face = emotion_result is not None
 
-        # 获取语音模块结果（从 AudioController 主动获取）
+        # 获取语音模块结果（极短超时轮流检查 pending/stt，在线 ASR 场景）
         speech_text = self._audio.get_user_input(timeout=0.0) if self._audio else None
 
         # 管理语音消费标记
         if speech_text is not None:
-            # 新语音到达
             self._last_speech_text = speech_text
             self._speech_consumed = False
-            logger.debug(f"新语音: {speech_text}")
 
-        # 判断是否有未消费的语音
         speech_has_new = not self._speech_consumed and self._last_speech_text is not None
+
+        # 获取健康数据（带时效检查）
+        health = self._get_current_health_data()
 
         # 构建状态字典
         state = {
@@ -109,44 +143,35 @@ class FusionModule(FusionInterface):
             'face_emotion': emotion_result,
             'speech_text': self._last_speech_text if speech_has_new else None,
             'speech_has_new': speech_has_new,
-            'heart_rate': None,  # 预留生理模块
+            'heart_rate': health['heart_rate'],
+            'heart_rate_valid': health['heart_rate_valid'],
+            'oxygen': health['oxygen'],
+            'oxygen_valid': health['oxygen_valid'],
+            'is_finger_detected': health['is_finger_detected'],
+            'sensor_status': health['sensor_status'],
+            'is_health_data_fresh': health['is_health_data_fresh'],
             'fusion_ready': self._vision is not None or self._audio is not None
         }
 
-        # 自动消费：如果启用了自动消费模式，且语音已被返回，则标记为已消费
+        # 自动消费语音
         if self._auto_consume and speech_has_new:
             self._speech_consumed = True
 
         return state
 
     def has_face(self) -> bool:
-        """
-        是否检测到人脸
-
-        Returns:
-            True: 检测到人脸，False: 未检测到
-        """
+        """是否检测到人脸"""
         if not self._vision:
             return False
         emotion = self._vision.get_emotion()
         return emotion is not None
 
     def has_speech(self) -> bool:
-        """
-        是否有新的语音输入（未消费）
-
-        Returns:
-            True: 有新语音且未消费，False: 无新语音或已消费
-        """
+        """是否有新的语音输入（未消费）"""
         return not self._speech_consumed and self._last_speech_text is not None
 
     def get_emotion(self) -> Optional[Dict[str, Any]]:
-        """
-        快捷获取情绪结果
-
-        Returns:
-            情绪结果字典，无检测结果返回 None
-        """
+        """快捷获取情绪结果"""
         if not self._vision:
             return None
         return self._vision.get_emotion()
@@ -170,6 +195,21 @@ class FusionModule(FusionInterface):
         self._speech_consumed = True
         logger.debug(f"消费语音: {text}")
         return text
+
+    def get_health_data(self) -> Optional[Dict[str, Any]]:
+        """获取最新健康数据"""
+        with self._health_lock:
+            if self._health_data:
+                return self._health_data.copy()
+            return None
+
+    def is_finger_detected(self) -> bool:
+        """是否检测到手指（传感器有效）"""
+        with self._health_lock:
+            if self._health_data:
+                return self._health_data.get('heart_rate_valid', False) or \
+                       self._health_data.get('oxygen_valid', False)
+            return False
 
     def reset_speech_consumed(self) -> None:
         """重置语音消费标记"""
@@ -215,5 +255,13 @@ class FusionModule(FusionInterface):
 
         if state['speech_text']:
             lines.append(f"  语音: {state['speech_text']}")
+
+        # 健康数据
+        if state['is_finger_detected']:
+            hr_info = f"{state['heart_rate']}bpm" if state['heart_rate_valid'] else "无效"
+            ox_info = f"{state['oxygen']}%" if state['oxygen_valid'] else "无效"
+            lines.append(f"  健康: 心率={hr_info}, 血氧={ox_info}")
+        elif state['sensor_status']:
+            lines.append(f"  传感器: {state['sensor_status']}")
 
         return "\n".join(lines)

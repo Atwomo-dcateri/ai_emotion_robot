@@ -20,18 +20,26 @@ class Config:
 
     # ========== 语音配置 ==========
     # STT 配置
-    AUDIO_STT_ENGINE = "vosk"  # vosk / none（none 时跳过语音输入）
+    AUDIO_STT_ENGINE = "baidu"  # vosk / baidu（离线/在线）
     AUDIO_VOSK_MODEL_PATH = "models/vosk-model-small-cn-0.22"
-    AUDIO_WAKE_WORDS = ["你好", "小机器人"]
+    AUDIO_WAKE_WORDS = ["你好", "小机器人", "小提琴"]
     AUDIO_LISTEN_TIMEOUT = 5.0
     AUDIO_SAMPLE_RATE = 16000
-    AUDIO_DEVICE_INDEX = 2  # USB 麦克风设备索引，None 为默认设备
+    AUDIO_DEVICE_INDEX = 1  # USB 麦克风设备索引 (USB PnP Sound Device)
+
+    # 百度 ASR 配置（engine="baidu" 时使用）
+    BAIDU_ASR_APP_ID = os.environ.get('BAIDU_ASR_APP_ID', '')
+    BAIDU_ASR_API_KEY = os.environ.get('BAIDU_ASR_API_KEY', '')
+    BAIDU_ASR_SECRET_KEY = os.environ.get('BAIDU_ASR_SECRET_KEY', '')
+    ASR_SILENCE_TIMEOUT = 0.8       # 静音判定超时（秒）
+    ASR_MIN_AUDIO_DURATION = 0.5    # 最小录音时长（秒）
 
     # TTS 配置
     AUDIO_TTS_ENGINE = "espeak"  # espeak / none
     AUDIO_TTS_RATE = 180
     AUDIO_TTS_VOLUME = 1.0
     AUDIO_TTS_VOICE = 'zh'
+    AUDIO_TTS_DEVICE = 'plughw:2,0'  # espeak 输出设备（None = 系统默认）
 
     # ========== OLED 配置 ==========
     OLED_ENABLED = True
@@ -59,11 +67,15 @@ class Config:
     # ========== 通信配置 ==========
     COMM_ENABLED = True                      # 是否启用串口通信
     COMM_SIMULATION_MODE = False             # 是否启用 STM32 模拟器（无硬件调试用）
-    COMM_SERIAL_PORT = '/dev/ttyAMA0'        # 串口设备路径
+    COMM_SERIAL_PORT = '/dev/serial0'           # 串口设备路径
     COMM_BAUDRATE = 115200                   # 波特率
     COMM_TIMEOUT = 0.1                       # 读取超时（秒）
     COMM_RECONNECT_INTERVAL = 3.0            # 断线重连间隔
     COMM_HEARTBEAT_INTERVAL = 1.0            # 健康数据上报间隔（由 STM32 控制）
+    # ========== 健康告警配置 ==========
+    HEART_RATE_HIGH_THRESHOLD = 300   # 心率过高阈值（bpm）
+    HEART_RATE_LOW_THRESHOLD = 60      # 心率过低阈值（bpm）
+    OXYGEN_LOW_THRESHOLD = 20          # 血氧过低阈值（%）
     @classmethod
     def from_env(cls):
         """从环境变量加载配置"""

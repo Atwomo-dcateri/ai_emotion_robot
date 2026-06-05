@@ -101,7 +101,8 @@ class VisionModule(VisionInterface):
         摄像头读取线程：从摄像头读取帧，放入队列
         """
         logger.info("正在打开摄像头...")
-        cap = cv2.VideoCapture(self.camera_id)
+        # 使用 V4L2 后端（USB 摄像头兼容性更好）
+        cap = cv2.VideoCapture(self.camera_id, cv2.CAP_V4L2)
 
         if not cap.isOpened():
             logger.error("无法打开摄像头")
@@ -112,6 +113,9 @@ class VisionModule(VisionInterface):
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.frame_width)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.frame_height)
         cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+
+        # 优化摄像头画质（对 USB 摄像头有效）
+        cap.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0.25)  # 关闭自动曝光
 
         logger.info(f"摄像头已打开: {self.frame_width}x{self.frame_height}")
 
